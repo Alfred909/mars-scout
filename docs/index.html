@@ -1,0 +1,1770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mars Colony: Pressurized Networks & Logistics</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- PointerLockControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Rajdhani', sans-serif;
+            user-select: none;
+            background-color: #030102;
+            color: #fff;
+        }
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+
+        /* Glassmorphism Sci-Fi Panels */
+        .scifi-panel {
+            background: rgba(18, 10, 15, 0.88);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 85, 0, 0.35);
+            box-shadow: 0 0 20px rgba(255, 60, 0, 0.15), inset 0 0 15px rgba(255, 60, 0, 0.05);
+        }
+        .scifi-panel-rad {
+            background: rgba(45, 10, 10, 0.92);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 30, 30, 0.8);
+            box-shadow: 0 0 25px rgba(255, 0, 0, 0.4);
+        }
+
+        /* Custom FPS Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+            display: block;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(0, 255, 200, 0.9);
+            box-shadow: 0 0 6px rgba(0, 255, 200, 0.8);
+        }
+        #crosshair::before { left: 9px; top: 0; width: 2px; height: 20px; }
+        #crosshair::after { top: 9px; left: 0; width: 20px; height: 2px; }
+
+        /* Key Indicator Badge */
+        .key-cap {
+            background: linear-gradient(180deg, #ff6600 0%, #aa2200 100%);
+            border: 1px solid #ffaa55;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            color: #ffffff;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Scanlines Effect */
+        .scanlines {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+        }
+
+        /* Radiation Vignette Pulse */
+        .rad-warning-active {
+            animation: radPulse 1.2s infinite alternate;
+        }
+        @keyframes radPulse {
+            0% { box-shadow: inset 0 0 30px rgba(255, 0, 0, 0.2); }
+            100% { box-shadow: inset 0 0 100px rgba(255, 0, 0, 0.8); }
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden">
+
+    <!-- WebGL Canvas Container -->
+    <div id="canvas-container" class="w-full h-full absolute inset-0 z-0"></div>
+
+    <!-- Screen Vignette / Radiation Overlay -->
+    <div id="screen-overlay" class="pointer-events-none fixed inset-0 z-10 transition-all duration-300"></div>
+
+    <!-- UI Overlay Layer -->
+    <div id="ui-layer" class="relative z-20 w-full h-full pointer-events-none flex flex-col justify-between p-4 scanlines">
+
+        <!-- TOP BAR: Mission Objectives & Resources -->
+        <div class="flex flex-wrap justify-between items-center w-full gap-2 pointer-events-auto">
+            <!-- Objective Badge -->
+            <div class="scifi-panel px-4 py-2 rounded-xl flex items-center gap-3">
+                <i class="fa-solid fa-list-check text-orange-500 text-2xl animate-pulse"></i>
+                <div>
+                    <h1 class="font-orbitron text-xs md:text-sm font-black tracking-wider text-orange-500 uppercase">MISSION OBJECTIVE</h1>
+                    <p id="objective-badge" class="text-xs text-amber-300 font-bold font-mono tracking-wide">1. PITCH EMERGENCY SAFETY SHELTER TENT</p>
+                </div>
+            </div>
+
+            <!-- Resource Bar & Atmosphere Status -->
+            <div class="scifi-panel px-4 py-2 rounded-xl flex items-center gap-4 text-xs md:text-sm">
+                <div class="flex items-center gap-1.5" title="Portable Alloy Plates">
+                    <i class="fa-solid fa-cubes text-slate-300"></i>
+                    <span class="text-gray-400">ALLOYS:</span>
+                    <span id="res-alloys" class="font-orbitron font-bold text-slate-200">100</span>
+                </div>
+                <div class="flex items-center gap-1.5" title="Suit Oxygen Level">
+                    <i class="fa-solid fa-wind text-cyan-400"></i>
+                    <span class="text-gray-400">O2:</span>
+                    <span id="res-o2" class="font-orbitron font-bold text-cyan-300">100%</span>
+                </div>
+                <div class="flex items-center gap-1.5" title="Pressurized Status">
+                    <i id="environment-icon" class="fa-solid fa-mask-ventilator text-amber-400"></i>
+                    <span class="text-gray-400">ENV:</span>
+                    <span id="environment-status" class="font-orbitron font-bold text-amber-400">UNPRESSURIZED SURFACE</span>
+                </div>
+                <div class="flex items-center gap-1.5" title="Carried Crate Kit">
+                    <i class="fa-solid fa-box text-amber-400"></i>
+                    <span class="text-gray-400">CARGO:</span>
+                    <span id="res-cargo" class="font-orbitron font-bold text-amber-300">EMPTY</span>
+                </div>
+            </div>
+
+            <!-- Radiation Level Meter -->
+            <div id="rad-meter" class="scifi-panel px-4 py-2 rounded-xl flex items-center gap-3">
+                <i class="fa-solid fa-radiation text-xl text-emerald-400 animate-spin-slow" id="rad-icon"></i>
+                <div>
+                    <div class="flex justify-between text-xs gap-2">
+                        <span class="text-gray-400">SURFACE RAD:</span>
+                        <span id="rad-val" class="font-orbitron font-bold text-emerald-400">0.05 mSv/h</span>
+                    </div>
+                    <div class="w-28 bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-700 mt-1">
+                        <div id="rad-bar" class="bg-emerald-500 h-full w-[5%] transition-all duration-300"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- View Toggle & Unstuck Buttons -->
+            <div class="flex items-center gap-2">
+                <button id="btn-toggle-view" class="pointer-events-auto bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-orbitron font-bold text-xs px-3.5 py-2.5 rounded-lg border border-orange-400 shadow-lg transition-all flex items-center gap-2">
+                    <i id="toggle-view-icon" class="fa-solid fa-satellite text-sm"></i>
+                    <span id="toggle-view-text">TOP-DOWN MAP (T)</span>
+                </button>
+                <button id="btn-unstuck" class="pointer-events-auto bg-slate-900/90 hover:bg-red-900/80 text-gray-300 hover:text-white font-orbitron text-xs font-bold px-3 py-2.5 rounded-lg border border-slate-700 hover:border-red-500 transition-all flex items-center gap-1.5" title="Exit FPS / Reset Camera Lock">
+                    <i class="fa-solid fa-arrow-rotate-left"></i>
+                    <span>UNSTUCK (U)</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- FPS Crosshair -->
+        <div id="crosshair"></div>
+
+        <!-- FPS Interaction Prompt -->
+        <div id="interaction-prompt" class="hidden absolute top-2/3 left-1/2 -translate-x-1/2 -translate-y-1/2 scifi-panel px-6 py-3 rounded-2xl border border-cyan-400 text-cyan-300 font-orbitron text-xs font-bold flex flex-col items-center gap-1 shadow-2xl pointer-events-none">
+            <div class="flex items-center gap-2">
+                <span class="key-cap">E</span>
+                <span id="prompt-main-text">INTERACT</span>
+            </div>
+            <span id="prompt-sub-text" class="text-[10px] text-amber-300 font-mono tracking-wider">ACTION AVAILABLE</span>
+        </div>
+
+        <!-- Radiation Warning Banner -->
+        <div id="rad-alert-banner" class="hidden self-center scifi-panel-rad px-8 py-3 rounded-xl flex items-center gap-4 animate-bounce">
+            <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl animate-pulse"></i>
+            <div>
+                <h3 class="font-orbitron font-extrabold text-red-400 tracking-wider text-sm md:text-base">EXTREME SOLAR RADIATION STORM!</h3>
+                <p class="text-xs text-red-200">SEEK SHELTER INSIDE PRESSURIZED HABITAT IMMEDIATELY!</p>
+            </div>
+        </div>
+
+        <!-- Vehicle Driving HUD Badge -->
+        <div id="vehicle-hud" class="hidden self-center scifi-panel px-6 py-2.5 rounded-xl border border-amber-500 text-amber-300 font-orbitron text-xs font-bold flex items-center gap-4">
+            <i class="fa-solid fa-truck-monster text-2xl text-amber-400 animate-pulse"></i>
+            <div>
+                <span class="text-amber-400">PILOTING MARS ROVER</span>
+                <p class="text-[10px] text-gray-300 font-mono">WASD: DRIVE • STEER | ROVER TRUNK: <span id="rover-trunk-status" class="text-white">EMPTY</span> | PRESS <span class="key-cap">F</span> TO EXIT</p>
+            </div>
+        </div>
+
+        <!-- BOTTOM HUD & BUILD / ORDER PALETTE -->
+        <div id="bottom-hud" class="flex flex-col md:flex-row justify-between items-end w-full gap-4 pointer-events-auto">
+
+            <!-- Controls Quick Reference Badge -->
+            <div class="scifi-panel p-3 rounded-xl text-xs font-mono text-gray-300 space-y-1 max-w-xs">
+                <div class="font-orbitron text-orange-400 font-bold mb-1 flex items-center justify-between">
+                    <span><i class="fa-solid fa-gamepad me-1"></i> SCOUT LOGISTICS</span>
+                    <span id="hud-mode-indicator" class="text-[10px] text-gray-400">FPS MODE</span>
+                </div>
+                <div><span class="key-cap">WASD</span> Walk / Drive Rover</div>
+                <div><span class="key-cap">T</span> Switch Map / Top-Down View</div>
+                <div><span class="key-cap">E</span> Pickup / Deliver Crate / Console</div>
+                <div><span class="key-cap">F</span> Board / Unload Rover Storage</div>
+                <div><span class="key-cap">B</span> Quick Build Menu</div>
+                <div><span class="key-cap">U</span> Unstuck / Emergency Release</div>
+            </div>
+
+            <!-- Top-Down Blueprint Order Selector -->
+            <div id="topdown-selector" class="hidden scifi-panel p-3 rounded-xl flex gap-2.5 overflow-x-auto max-w-full">
+                <!-- Drop-off Zone -->
+                <button data-type="dropzone" class="order-btn active p-2.5 rounded-lg border border-orange-500/30 hover:border-orange-500 bg-black/40 hover:bg-orange-950/50 transition-all flex flex-col items-center min-w-[90px]">
+                    <i class="fa-solid fa-plane-landing text-xl text-cyan-400 mb-1"></i>
+                    <span class="font-orbitron text-[11px] font-bold text-gray-200">Drop Zone</span>
+                    <span class="text-[9px] text-cyan-400">Free Kit</span>
+                </button>
+                <!-- Vehicle Garage -->
+                <button data-type="garage" class="order-btn p-2.5 rounded-lg border border-orange-500/30 hover:border-orange-500 bg-black/40 hover:bg-orange-950/50 transition-all flex flex-col items-center min-w-[90px]">
+                    <i class="fa-solid fa-warehouse text-xl text-amber-400 mb-1"></i>
+                    <span class="font-orbitron text-[11px] font-bold text-gray-200">Garage</span>
+                    <span class="text-[9px] text-amber-400">1 Garage Kit</span>
+                </button>
+                <!-- Supply Hub -->
+                <button data-type="supplies" class="order-btn p-2.5 rounded-lg border border-orange-500/30 hover:border-orange-500 bg-black/40 hover:bg-orange-950/50 transition-all flex flex-col items-center min-w-[90px]">
+                    <i class="fa-solid fa-boxes-stacked text-xl text-yellow-400 mb-1"></i>
+                    <span class="font-orbitron text-[11px] font-bold text-gray-200">Supply Hub</span>
+                    <span class="text-[9px] text-yellow-400">1 Supply Kit</span>
+                </button>
+                <!-- Drone Command -->
+                <button data-type="dronehub" class="order-btn p-2.5 rounded-lg border border-orange-500/30 hover:border-orange-500 bg-black/40 hover:bg-orange-950/50 transition-all flex flex-col items-center min-w-[90px]">
+                    <i class="fa-solid fa-tower-cell text-xl text-purple-400 mb-1"></i>
+                    <span class="font-orbitron text-[11px] font-bold text-gray-200">Drone Hub</span>
+                    <span class="text-[9px] text-purple-400">1 Command Kit</span>
+                </button>
+                <!-- Lounge Dome -->
+                <button data-type="entertainment" class="order-btn p-2.5 rounded-lg border border-orange-500/30 hover:border-orange-500 bg-black/40 hover:bg-orange-950/50 transition-all flex flex-col items-center min-w-[90px]">
+                    <i class="fa-solid fa-gamepad text-xl text-emerald-400 mb-1"></i>
+                    <span class="font-orbitron text-[11px] font-bold text-gray-200">Lounge Dome</span>
+                    <span class="text-[9px] text-emerald-400">1 Lounge Kit</span>
+                </button>
+                <!-- Hallway Connector -->
+                <button data-type="hallway" class="order-btn p-2.5 rounded-lg border border-orange-500/30 hover:border-orange-500 bg-black/40 hover:bg-orange-950/50 transition-all flex flex-col items-center min-w-[90px]">
+                    <i class="fa-solid fa-archway text-xl text-teal-400 mb-1"></i>
+                    <span class="font-orbitron text-[11px] font-bold text-gray-200">Hallway</span>
+                    <span class="text-[9px] text-teal-400">Connect Domes</span>
+                </button>
+            </div>
+
+            <!-- FPS Build Placement Toggle Button -->
+            <button id="btn-toggle-build" class="scifi-panel p-3.5 rounded-xl border border-orange-500 text-orange-400 hover:text-white hover:bg-orange-600/30 font-orbitron font-bold text-xs flex items-center gap-2 transition-all">
+                <i class="fa-solid fa-campground text-lg"></i>
+                <span id="build-btn-status">BUILD TENT (Press B)</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- STARTUP INTRO OVERLAY MODAL -->
+    <div id="intro-modal" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="scifi-panel p-6 md:p-8 rounded-2xl max-w-xl w-full text-center space-y-6 border border-orange-500/60 shadow-2xl">
+            <div class="inline-block p-4 rounded-full bg-orange-950/60 border border-orange-500/40">
+                <i class="fa-solid fa-person-military-to-person text-5xl text-orange-500 animate-pulse"></i>
+            </div>
+            <div>
+                <h2 class="font-orbitron text-2xl md:text-3xl font-black text-orange-500 tracking-wider">ARES SCOUT DESCENT</h2>
+                <p class="text-xs text-orange-300 font-mono tracking-widest uppercase mt-1">PRESSURIZED NETWORK PROTOCOL</p>
+            </div>
+            <div class="text-xs md:text-sm text-gray-300 leading-relaxed text-left bg-black/50 p-4 rounded-xl border border-orange-500/20 space-y-2">
+                <p><strong>1. INITIAL BASE SETUP:</strong> Press <span class="key-cap">B</span> to toggle building mode in FPS view, then Left-Click the green outline to pitch your Safety Tent.</p>
+                <p><strong>2. DISTANCE REGULATION:</strong> Buildings must maintain a 10m to 30m spacing constraint to allow connecting pressurized hallways.</p>
+                <p><strong>3. PRESSURIZED INTERIOR BOUNDARIES:</strong> Passing through airlocks locks Scout movements inside the interior dome network. You cannot step outside through walls without an airlock!</p>
+                <p><strong>4. LOGISTICS & ROVER:</strong> Carry delivered Kits manually or store them in the Mars Rover trunk to build distant outposts.</p>
+            </div>
+            <button id="btn-begin-mission" class="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 text-white font-orbitron font-black py-3.5 rounded-xl border border-orange-400 shadow-xl tracking-widest text-base transition-all">
+                TOUCH DOWN ON MARS
+            </button>
+        </div>
+    </div>
+
+    <!-- AIRLOCK CYCLING OVERLAY MODAL -->
+    <div id="airlock-modal" class="hidden fixed inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-center justify-center">
+        <div class="scifi-panel p-6 rounded-2xl max-w-md w-full text-center space-y-4 border border-cyan-400">
+            <i class="fa-solid fa-door-closed text-4xl text-cyan-400 animate-pulse"></i>
+            <h3 id="airlock-title" class="font-orbitron font-extrabold text-cyan-300 tracking-wider text-base">AIRLOCK DEPRESSURIZING...</h3>
+            <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-cyan-800">
+                <div id="airlock-progress" class="bg-cyan-400 h-full w-0 transition-all duration-100"></div>
+            </div>
+            <p id="airlock-sub" class="text-xs font-mono text-cyan-200">EQUALIZING ATMOSPHERIC PRESSURE</p>
+        </div>
+    </div>
+
+    <!-- MAIN GAME LOGIC SCRIPT -->
+    <script>
+        // --- GAME STATE ARCHITECTURE ---
+        const gameState = {
+            viewMode: 'fps', // 'fps' or 'topdown'
+            stage: 'safety_tent', // 'safety_tent', 'drop_zone', 'colony_expansion'
+            isInsideTent: false,
+            currentInsideTent: null,
+            isPilotingRover: false,
+            buildModeActive: false,
+            airlockCycling: false,
+            carriedCargo: null,
+            designatedBlueprintType: 'garage',
+            radiation: {
+                surfaceLevel: 0.05,
+                currentLevel: 0.05,
+                stormActive: false,
+                stormTimer: 0
+            },
+            player: {
+                health: 100,
+                oxygen: 100,
+                position: new THREE.Vector3(0, 1.8, 12),
+                speed: 10.0,
+                rotationY: 0
+            },
+            resources: {
+                alloys: 100
+            },
+            structures: [],       // Built completed structures
+            blueprints: [],       // Holographic designated sites
+            hallways: [],         // Pressurized corridor connectors
+            dropZone: null,       // Reference to dropzone
+            drone: null,          // Active cargo drone
+            rover: null,          // Rover object
+            supplyCrates: []      // Crates sitting on surface
+        };
+
+        const MIN_BUILD_DIST = 10.0;
+        const MAX_BUILD_DIST = 32.0;
+
+        const structureDetails = {
+            shelter: { name: 'Safety Shelter Tent', costAlloys: 40, radius: 4.0 },
+            dropzone: { name: 'Drone Drop-off Zone', costAlloys: 50, radius: 5.0 },
+            garage: { name: 'Vehicle Garage', kitType: 'garage_kit', radius: 4.5 },
+            supplies: { name: 'Supply Storage Hub', kitType: 'supplies_kit', radius: 4.0 },
+            dronehub: { name: 'Drone Command Hub', kitType: 'dronehub_kit', radius: 4.0 },
+            entertainment: { name: 'Lounge Dome', kitType: 'entertainment_kit', radius: 4.5 },
+            hallway: { name: 'Pressurized Hallway', kitType: 'hallway_kit', radius: 2.0 }
+        };
+
+        // --- THREE.JS GLOBALS ---
+        let scene, camera, renderer, pointerControls;
+        let clock = new THREE.Clock();
+        let raycaster, mouse;
+        let terrainMesh, placementPreviewMesh;
+        let placementRingMesh; // Visual feedback ring for distance rules
+        let dustStormParticles;
+        let orbitSpherical = new THREE.Spherical(45, Math.PI / 3.5, 0);
+        let orbitTarget = new THREE.Vector3(0, 0, 0);
+
+        // Held hand mesh
+        let handCargoMesh;
+
+        // Keyboard Inputs
+        const keys = { w: false, a: false, s: false, d: false };
+
+        // Web Audio Synthesizer
+        let audioCtx = null;
+        function playAudio(type) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                const now = audioCtx.currentTime;
+
+                if (type === 'airlock') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.linearRampToValueAtTime(300, now + 1.2);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 1.5);
+                    osc.start(now);
+                    osc.stop(now + 1.5);
+                } else if (type === 'build') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.setValueAtTime(700, now + 0.15);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else if (type === 'pickup') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(500, now);
+                    osc.frequency.setValueAtTime(800, now + 0.1);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                } else if (type === 'geiger') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(1200 + Math.random() * 400, now);
+                    gain.gain.setValueAtTime(0.04, now);
+                    gain.gain.linearRampToValueAtTime(0.001, now + 0.03);
+                    osc.start(now);
+                    osc.stop(now + 0.03);
+                } else if (type === 'engine') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(65, now);
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                }
+            } catch (e) {
+                // Ignore audio context autoplay errors cleanly
+            }
+        }
+
+        // --- INITIALIZATION ---
+        function init() {
+            try {
+                const container = document.getElementById('canvas-container');
+
+                // Scene
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x180705);
+                scene.fog = new THREE.FogExp2(0x2d0b06, 0.012);
+
+                // Camera
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+                // Renderer
+                renderer = new THREE.WebGLRenderer({ antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                container.appendChild(renderer.domElement);
+
+                // Pointer Lock Controls (FPS)
+                pointerControls = new THREE.PointerLockControls(camera, document.body);
+                scene.add(pointerControls.getObject());
+
+                createHandCargoMesh();
+
+                raycaster = new THREE.Raycaster();
+                mouse = new THREE.Vector2();
+
+                setupLighting();
+                createMarsTerrain();
+                createDustStorm();
+                createPlacementPreview();
+
+                setupEventListeners();
+
+                setInterval(updateRadiationSystem, 1000);
+                setInterval(updateResourceCycles, 3000);
+
+                animate();
+            } catch (err) {
+                console.error("Init Error:", err);
+            }
+        }
+
+        // --- LIGHTING ---
+        function setupLighting() {
+            const sunLight = new THREE.DirectionalLight(0xffa877, 1.8);
+            sunLight.position.set(60, 90, 40);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 250;
+            const d = 80;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            scene.add(sunLight);
+
+            const ambientLight = new THREE.AmbientLight(0x5a2318, 0.7);
+            scene.add(ambientLight);
+        }
+
+        // --- TERRAIN ---
+        function createMarsTerrain() {
+            const geo = new THREE.PlaneGeometry(300, 300, 90, 90);
+            geo.rotateX(-Math.PI / 2);
+
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i);
+                const z = pos.getZ(i);
+                const h = Math.sin(x * 0.04) * Math.cos(z * 0.04) * 2.5 + Math.sin(x * 0.08) * 0.8;
+                pos.setY(i, h);
+            }
+            geo.computeVertexNormals();
+
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xc84820,
+                roughness: 0.9,
+                metalness: 0.1,
+                flatShading: true
+            });
+
+            terrainMesh = new THREE.Mesh(geo, mat);
+            terrainMesh.receiveShadow = true;
+            terrainMesh.name = "Terrain";
+            scene.add(terrainMesh);
+
+            const grid = new THREE.GridHelper(300, 60, 0xff4400, 0x441100);
+            grid.position.y = 0.05;
+            scene.add(grid);
+        }
+
+        function createDustStorm() {
+            const count = 1200;
+            const geo = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+
+            for (let i = 0; i < count * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 250;
+                positions[i + 1] = Math.random() * 25;
+                positions[i + 2] = (Math.random() - 0.5) * 250;
+            }
+
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const mat = new THREE.PointsMaterial({ color: 0xe06030, size: 0.35, transparent: true, opacity: 0.5 });
+            dustStormParticles = new THREE.Points(geo, mat);
+            scene.add(dustStormParticles);
+        }
+
+        function createHandCargoMesh() {
+            const geo = new THREE.BoxGeometry(0.5, 0.4, 0.5);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3, metalness: 0.5 });
+            handCargoMesh = new THREE.Mesh(geo, mat);
+            handCargoMesh.position.set(0.4, -0.3, -0.8);
+            handCargoMesh.visible = false;
+            camera.add(handCargoMesh);
+        }
+
+        function createPlacementPreview() {
+            const geo = new THREE.BoxGeometry(6, 0.2, 6);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0.5, wireframe: true });
+            placementPreviewMesh = new THREE.Mesh(geo, mat);
+            placementPreviewMesh.visible = false;
+            scene.add(placementPreviewMesh);
+
+            // Distance Regulation Ring Visualizer
+            const ringGeo = new THREE.RingGeometry(MIN_BUILD_DIST, MAX_BUILD_DIST, 32);
+            ringGeo.rotateX(-Math.PI / 2);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
+            placementRingMesh = new THREE.Mesh(ringGeo, ringMat);
+            placementRingMesh.visible = false;
+            scene.add(placementRingMesh);
+        }
+
+        // --- DISTANCE REGULATION CHECKER ---
+        function validatePlacementDistance(x, z) {
+            if (typeof x !== 'number' || typeof z !== 'number' || isNaN(x) || isNaN(z)) {
+                return { valid: false, msg: "Invalid terrain coordinates." };
+            }
+
+            const allNodes = [...(gameState.structures || []), ...(gameState.blueprints || [])];
+            if (allNodes.length === 0) return { valid: true, msg: "Valid initial placement location." };
+
+            let nearestDist = Infinity;
+
+            for (let node of allNodes) {
+                if (!node || typeof node.x !== 'number' || typeof node.z !== 'number') continue;
+                const dist = Math.hypot(node.x - x, node.z - z);
+                if (dist < nearestDist) nearestDist = dist;
+
+                // Check direct overlap (too close)
+                if (dist < MIN_BUILD_DIST) {
+                    return { valid: false, msg: `TOO CLOSE! Maintain minimum ${MIN_BUILD_DIST}m distance between domes.` };
+                }
+            }
+
+            if (nearestDist > MAX_BUILD_DIST && nearestDist !== Infinity) {
+                return { valid: false, msg: `TOO FAR! Must be within ${MAX_BUILD_DIST}m to connect pressurized hallways.` };
+            }
+
+            return { valid: true, msg: "Valid distance for pressurized hallway connection." };
+        }
+
+        // --- PROCEDURAL STRUCTURE CREATION ---
+        function createStructureMesh(type) {
+            const group = new THREE.Group();
+
+            if (type === 'shelter') {
+                const domeGeo = new THREE.SphereGeometry(4.0, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+                const domeMat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.3, metalness: 0.2 });
+                const dome = new THREE.Mesh(domeGeo, domeMat);
+                group.add(dome);
+
+                const ringGeo = new THREE.TorusGeometry(3.9, 0.1, 8, 24);
+                const ringMat = new THREE.MeshBasicMaterial({ color: 0x34d399 });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = Math.PI / 2;
+                ring.position.y = 0.5;
+                group.add(ring);
+            } 
+            else if (type === 'dropzone') {
+                const padGeo = new THREE.CylinderGeometry(5, 5, 0.2, 16);
+                const padMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
+                const pad = new THREE.Mesh(padGeo, padMat);
+                pad.position.y = 0.1;
+                group.add(pad);
+
+                const markGeo = new THREE.BoxGeometry(6, 0.05, 0.8);
+                const markMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 });
+                const m1 = new THREE.Mesh(markGeo, markMat);
+                m1.position.y = 0.22;
+                m1.rotation.y = Math.PI / 4;
+                const m2 = new THREE.Mesh(markGeo, markMat);
+                m2.position.y = 0.22;
+                m2.rotation.y = -Math.PI / 4;
+                group.add(m1);
+                group.add(m2);
+
+                for (let i = 0; i < 4; i++) {
+                    const a = (i * Math.PI) / 2 + Math.PI / 4;
+                    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 1.5), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+                    b.position.set(Math.cos(a) * 4.2, 0.75, Math.sin(a) * 4.2);
+                    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0x06b6d4 }));
+                    tip.position.set(Math.cos(a) * 4.2, 1.5, Math.sin(a) * 4.2);
+                    group.add(b);
+                    group.add(tip);
+                }
+            }
+            else if (type === 'garage') {
+                const bayGeo = new THREE.BoxGeometry(8, 4, 8);
+                const bayMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.7, roughness: 0.4 });
+                const bay = new THREE.Mesh(bayGeo, bayMat);
+                bay.position.y = 2;
+                group.add(bay);
+
+                const doorGeo = new THREE.PlaneGeometry(5, 3);
+                const doorMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide });
+                const door = new THREE.Mesh(doorGeo, doorMat);
+                door.position.set(0, 1.5, 4.02);
+                group.add(door);
+            }
+            else if (type === 'supplies') {
+                const boxGeo = new THREE.BoxGeometry(6, 3, 5);
+                const boxMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.6 });
+                const box = new THREE.Mesh(boxGeo, boxMat);
+                box.position.y = 1.5;
+                group.add(box);
+
+                const stripeGeo = new THREE.BoxGeometry(6.1, 0.4, 5.1);
+                const stripeMat = new THREE.MeshBasicMaterial({ color: 0xeab308 });
+                const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+                stripe.position.y = 1.5;
+                group.add(stripe);
+            }
+            else if (type === 'dronehub') {
+                const base = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 4, 2, 8), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+                base.position.y = 1;
+                group.add(base);
+
+                const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 4), new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.8 }));
+                tower.position.y = 4;
+                group.add(tower);
+
+                const dish = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 0.2, 0.4, 12), new THREE.MeshStandardMaterial({ color: 0x38bdf8 }));
+                dish.position.set(0, 6.2, 0);
+                dish.rotation.x = Math.PI / 4;
+                dish.name = "radar_dish";
+                group.add(dish);
+            }
+            else if (type === 'entertainment') {
+                const domeGeo = new THREE.SphereGeometry(4.5, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+                const domeMat = new THREE.MeshPhysicalMaterial({ color: 0xa855f7, transparent: true, opacity: 0.75, roughness: 0.1 });
+                const dome = new THREE.Mesh(domeGeo, domeMat);
+                group.add(dome);
+            }
+
+            // Airlock Doors (External entrances)
+            if (type !== 'dropzone') {
+                const airlockGroup = new THREE.Group();
+                airlockGroup.name = "airlock_door";
+                airlockGroup.position.set(0, 0, 3.8);
+
+                const frame = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.4, 0.6), new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 }));
+                frame.position.y = 1.2;
+                airlockGroup.add(frame);
+
+                const lightGeo = new THREE.SphereGeometry(0.12, 8, 8);
+                const lightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+                const statusLight = new THREE.Mesh(lightGeo, lightMat);
+                statusLight.name = "airlock_status_light";
+                statusLight.position.set(0, 2.2, 0.32);
+                airlockGroup.add(statusLight);
+
+                group.add(airlockGroup);
+
+                // Command Console inside
+                const consoleGroup = new THREE.Group();
+                consoleGroup.name = "command_console";
+                const desk = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+                desk.position.set(0, 0.4, -1.2);
+                consoleGroup.add(desk);
+
+                const screenGeo = new THREE.BoxGeometry(1.2, 0.7, 0.1);
+                const screenMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4 });
+                const screen = new THREE.Mesh(screenGeo, screenMat);
+                screen.name = "console_screen";
+                screen.position.set(0, 1.1, -1.2);
+                consoleGroup.add(screen);
+
+                // Flashing aura indicator ring around console base
+                const ringGeo = new THREE.RingGeometry(0.6, 1.2, 16);
+                ringGeo.rotateX(-Math.PI / 2);
+                const ringMat = new THREE.MeshBasicMaterial({ color: 0x06b6d4, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+                const halo = new THREE.Mesh(ringGeo, ringMat);
+                halo.name = "console_halo";
+                halo.position.set(0, 0.05, -1.2);
+                consoleGroup.add(halo);
+
+                group.add(consoleGroup);
+            }
+
+            return group;
+        }
+
+        // --- PRESSURIZED HALLWAY / CORRIDOR MESH ---
+        function createHallwayConnectorMesh(p1, p2) {
+            const group = new THREE.Group();
+
+            const dist = p1.distanceTo(p2);
+            const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
+            const angle = Math.atan2(dir.x, dir.z);
+
+            // Tube Body
+            const tubeGeo = new THREE.CylinderGeometry(1.6, 1.6, dist, 12);
+            tubeGeo.rotateX(Math.PI / 2);
+            const tubeMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.4 });
+            const tube = new THREE.Mesh(tubeGeo, tubeMat);
+            tube.position.set(0, 1.6, dist / 2);
+            group.add(tube);
+
+            // Interior Walkway Floor
+            const floorGeo = new THREE.PlaneGeometry(2.2, dist);
+            floorGeo.rotateX(-Math.PI / 2);
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.position.set(0, 0.1, dist / 2);
+            group.add(floor);
+
+            group.position.copy(p1);
+            group.rotation.y = angle;
+
+            return group;
+        }
+
+        function createBlueprintGhostMesh(type) {
+            const group = new THREE.Group();
+            group.name = "blueprint_ghost";
+
+            const boxGeo = new THREE.BoxGeometry(6, 3, 6);
+            const boxMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa, wireframe: true, transparent: true, opacity: 0.6 });
+            const box = new THREE.Mesh(boxGeo, boxMat);
+            box.position.y = 1.5;
+            group.add(box);
+
+            const beaconGeo = new THREE.TorusGeometry(1.5, 0.1, 8, 20);
+            const beaconMat = new THREE.MeshBasicMaterial({ color: 0x00ffaa });
+            const beacon = new THREE.Mesh(beaconGeo, beaconMat);
+            beacon.rotation.x = Math.PI / 2;
+            beacon.position.y = 5.0;
+            beacon.name = "beacon_ring";
+            group.add(beacon);
+
+            return group;
+        }
+
+        function createRoverMesh() {
+            const group = new THREE.Group();
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.0, 3.2), new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.4, metalness: 0.6 }));
+            body.position.y = 1.0;
+            group.add(body);
+
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 1.6), new THREE.MeshPhysicalMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.6 }));
+            cabin.position.set(0, 1.7, 0.3);
+            group.add(cabin);
+
+            const trunkGeo = new THREE.BoxGeometry(1.8, 0.4, 1.0);
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.set(0, 1.2, -1.0);
+            group.add(trunk);
+
+            const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 12);
+            wheelGeo.rotateZ(Math.PI / 2);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+
+            const wheelPositions = [
+                [-1.3, 0.5, 1.2], [1.3, 0.5, 1.2],
+                [-1.3, 0.5, 0.0], [1.3, 0.5, 0.0],
+                [-1.3, 0.5, -1.2], [1.3, 0.5, -1.2]
+            ];
+
+            wheelPositions.forEach(p => {
+                const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                wheel.position.set(p[0], p[1], p[2]);
+                group.add(wheel);
+            });
+
+            return group;
+        }
+
+        function spawnSupplyCrate(type, position) {
+            const group = new THREE.Group();
+            group.name = `crate_${type}`;
+
+            const crateGeo = new THREE.BoxGeometry(1.2, 1.0, 1.2);
+            const crateMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3, metalness: 0.5 });
+            const crate = new THREE.Mesh(crateGeo, crateMat);
+            crate.position.y = 0.5;
+            group.add(crate);
+
+            const ringGeo = new THREE.TorusGeometry(0.8, 0.08, 8, 16);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.rotation.x = Math.PI / 2;
+            ring.position.y = 1.4;
+            ring.name = "crate_ring";
+            group.add(ring);
+
+            group.position.copy(position);
+            scene.add(group);
+
+            gameState.supplyCrates.push({
+                mesh: group,
+                type: type,
+                position: group.position
+            });
+        }
+
+        function dispatchSupplyDrone(type) {
+            if (!gameState.dropZone) {
+                showNotification("No Drop Zone built! Build a Drop Zone first.");
+                return;
+            }
+
+            const dropPos = gameState.dropZone.mesh.position.clone();
+            const droneGroup = new THREE.Group();
+
+            const core = new THREE.Mesh(new THREE.BoxGeometry(2, 0.6, 2), new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 }));
+            core.position.y = 0.3;
+            droneGroup.add(core);
+
+            for (let i = 0; i < 4; i++) {
+                const angle = (i * Math.PI) / 2 + Math.PI / 4;
+                const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.8), new THREE.MeshStandardMaterial({ color: 0x475569 }));
+                arm.position.set(Math.cos(angle) * 1.2, 0.3, Math.sin(angle) * 1.2);
+                arm.rotation.z = Math.PI / 2;
+                arm.rotation.y = angle;
+                droneGroup.add(arm);
+            }
+
+            droneGroup.position.set(dropPos.x, dropPos.y + 35, dropPos.z);
+            scene.add(droneGroup);
+
+            gameState.drone = {
+                mesh: droneGroup,
+                targetPos: dropPos,
+                type: type,
+                stage: 'descending',
+                timer: 0
+            };
+
+            showNotification(`Cargo Drone dispatched with ${structureDetails[type] ? structureDetails[type].name : 'Supply'} Kit!`);
+        }
+
+        // --- DESIGNATE BLUEPRINT WITH DISTANCE VALIDATION ---
+        function designateBlueprint(type, x, z) {
+            const check = validatePlacementDistance(x, z);
+            if (!check.valid) {
+                showNotification(check.msg);
+                return;
+            }
+
+            const ghostMesh = createBlueprintGhostMesh(type);
+            ghostMesh.position.set(x, 0, z);
+            scene.add(ghostMesh);
+
+            const bpObj = {
+                type: type,
+                x: x,
+                z: z,
+                mesh: ghostMesh,
+                assembled: false
+            };
+
+            gameState.blueprints.push(bpObj);
+            playAudio('build');
+
+            const sName = structureDetails[type] ? structureDetails[type].name : 'Structure';
+            showNotification(`Designated site for ${sName}! Order kit at Drop Zone.`);
+            dispatchSupplyDrone(type);
+        }
+
+        // --- AUTOMATIC HALLWAY NETWORK GENERATOR ---
+        function checkAndConnectHallways(newStruct) {
+            if (!newStruct || typeof newStruct.x !== 'number' || typeof newStruct.z !== 'number') return;
+            if (!Array.isArray(gameState.structures) || gameState.structures.length <= 1) return;
+
+            const p1 = new THREE.Vector3(newStruct.x, 0, newStruct.z);
+
+            for (let other of gameState.structures) {
+                if (!other || other === newStruct || other.type === 'dropzone') continue;
+
+                const p2 = new THREE.Vector3(other.x, 0, other.z);
+                const dist = p1.distanceTo(p2);
+
+                // Auto spawn connecting hallway if within valid range
+                if (dist >= MIN_BUILD_DIST && dist <= MAX_BUILD_DIST) {
+                    try {
+                        const hwMesh = createHallwayConnectorMesh(p1, p2);
+                        if (hwMesh) {
+                            scene.add(hwMesh);
+                            gameState.hallways.push({
+                                p1: p1.clone(),
+                                p2: p2.clone(),
+                                mesh: hwMesh,
+                                length: dist
+                            });
+                            showNotification("PRESSURIZED HALLWAY CONNECTOR DEPLOYED!");
+                        }
+                    } catch (err) {
+                        console.error("Hallway generation deferred:", err);
+                    }
+                }
+            }
+        }
+
+        // --- ASSEMBLE STRUCTURE ---
+        function assembleStructureFromBlueprint(bp) {
+            if (!bp) return;
+            scene.remove(bp.mesh);
+            const index = gameState.blueprints.indexOf(bp);
+            if (index > -1) gameState.blueprints.splice(index, 1);
+
+            const realMesh = createStructureMesh(bp.type);
+            realMesh.position.set(bp.x, 0, bp.z);
+            scene.add(realMesh);
+
+            const structObj = {
+                type: bp.type,
+                x: bp.x,
+                z: bp.z,
+                mesh: realMesh,
+                radius: structureDetails[bp.type] ? structureDetails[bp.type].radius || 4.0 : 4.0
+            };
+
+            gameState.structures.push(structObj);
+
+            // Connect pressurized hallway if adjacent to existing domes
+            checkAndConnectHallways(structObj);
+
+            if (bp.type === 'garage' && !gameState.rover) {
+                const roverMesh = createRoverMesh();
+                roverMesh.position.set(bp.x, 0, bp.z + 6);
+                scene.add(roverMesh);
+                gameState.rover = {
+                    mesh: roverMesh,
+                    position: roverMesh.position,
+                    rotationY: 0,
+                    speed: 0,
+                    trunkCargo: null
+                };
+                showNotification("MARS ROVER UNLOCKED & DEPLOYED AT GARAGE!");
+            }
+
+            gameState.carriedCargo = null;
+            if (handCargoMesh) handCargoMesh.visible = false;
+
+            playAudio('build');
+            updateUI();
+            showNotification(`Successfully assembled ${structureDetails[bp.type] ? structureDetails[bp.type].name : 'Structure'}!`);
+        }
+
+        function placeInitialFPSStructure(type, x, z) {
+            // Guard clause to prevent double execution or invalid coordinates
+            if (typeof x !== 'number' || typeof z !== 'number' || isNaN(x) || isNaN(z)) return;
+
+            const check = validatePlacementDistance(x, z);
+            if (!check.valid && gameState.structures.length > 0) {
+                showNotification(check.msg);
+                return;
+            }
+
+            const cost = structureDetails[type] ? structureDetails[type].costAlloys || 0 : 0;
+            if (gameState.resources.alloys < cost) {
+                showNotification(`Not enough Alloys! (${cost} required)`);
+                return;
+            }
+
+            gameState.resources.alloys -= cost;
+            playAudio('build');
+
+            // Generate 3D structure mesh
+            const mesh = createStructureMesh(type);
+            mesh.position.set(x, 0, z);
+            scene.add(mesh);
+
+            const structObj = {
+                type: type,
+                x: x,
+                z: z,
+                mesh: mesh,
+                radius: structureDetails[type] ? structureDetails[type].radius || 4.0 : 4.0
+            };
+
+            gameState.structures.push(structObj);
+
+            // Safely check hallways (only if more than 1 structure exists)
+            if (gameState.structures.length > 1) {
+                checkAndConnectHallways(structObj);
+            }
+
+            // Clean state progression handling without thread lockups
+            if (type === 'shelter' && gameState.stage === 'safety_tent') {
+                gameState.stage = 'drop_zone';
+                
+                const objBadge = document.getElementById('objective-badge');
+                if (objBadge) objBadge.innerText = "2. CONSTRUCT DRONE DROP-OFF ZONE";
+                
+                const buildBtn = document.getElementById('btn-toggle-build');
+                if (buildBtn) {
+                    const btnLabel = buildBtn.querySelector('span');
+                    if (btnLabel) btnLabel.innerText = "BUILD DROP ZONE (Press B)";
+                }
+
+                showNotification("Safety Shelter Pitched! Next: Build a Drone Drop-off Zone.");
+            } else if (type === 'dropzone' && gameState.stage === 'drop_zone') {
+                gameState.dropZone = structObj;
+                gameState.stage = 'colony_expansion';
+
+                const objBadge = document.getElementById('objective-badge');
+                if (objBadge) objBadge.innerText = "3. CONNECT PRESSURIZED DOMES VIA HALLWAYS";
+
+                const buildBtn = document.getElementById('btn-toggle-build');
+                if (buildBtn) buildBtn.classList.add('hidden');
+
+                const topdownSel = document.getElementById('topdown-selector');
+                if (topdownSel) topdownSel.classList.remove('hidden');
+
+                showNotification("Drop Zone Ready! Enter Top-Down mode to designate colony structures.");
+            }
+
+            // Reset build state preview cleanly
+            gameState.buildModeActive = false;
+            if (placementPreviewMesh) placementPreviewMesh.visible = false;
+            if (placementRingMesh) placementRingMesh.visible = false;
+            
+            updateUI();
+        }
+
+        // --- AIRLOCK CYCLING & PRESSURIZED BOUNDARY SYSTEM ---
+        function cycleAirlock(structure) {
+            if (gameState.airlockCycling) return;
+            gameState.airlockCycling = true;
+            playAudio('airlock');
+
+            const modal = document.getElementById('airlock-modal');
+            const progress = document.getElementById('airlock-progress');
+            modal.classList.remove('hidden');
+
+            let p = 0;
+            const interval = setInterval(() => {
+                p += 5;
+                progress.style.width = `${p}%`;
+
+                if (p >= 100) {
+                    clearInterval(interval);
+                    modal.classList.add('hidden');
+                    gameState.airlockCycling = false;
+
+                    gameState.isInsideTent = !gameState.isInsideTent;
+                    gameState.currentInsideTent = gameState.isInsideTent ? structure : null;
+
+                    const statusLight = structure.mesh ? structure.mesh.getObjectByName("airlock_status_light") : null;
+
+                    if (gameState.isInsideTent) {
+                        if (statusLight) statusLight.material.color.setHex(0x10b981);
+                        // Move player inside dome center safely
+                        pointerControls.getObject().position.set(structure.x, 1.8, structure.z);
+                        showNotification("AIRLOCK SEALED: INSIDE PRESSURIZED NETWORK (SAFE FROM RADIATION)");
+                    } else {
+                        if (statusLight) statusLight.material.color.setHex(0xef4444);
+                        // Move player outside airlock door
+                        pointerControls.getObject().position.set(structure.x, 1.8, structure.z + 5.0);
+                        showNotification("AIRLOCK CYCLED: ENTERING MARS EXTERIOR");
+                    }
+                    updateUI();
+                }
+            }, 60);
+        }
+
+        // --- PRESSURIZED INDOOR BOUNDARY COLLISION ---
+        function enforceIndoorBoundaryCollision(targetPos) {
+            if (!gameState.isInsideTent) return targetPos;
+
+            let insideAnyNode = false;
+
+            // 1. Check inside domes
+            for (let s of gameState.structures) {
+                if (!s || s.type === 'dropzone') continue;
+                const dist = Math.hypot(targetPos.x - s.x, targetPos.z - s.z);
+                if (dist <= s.radius - 0.4) {
+                    insideAnyNode = true;
+                    break;
+                }
+            }
+
+            // 2. Check inside pressurized hallways
+            if (!insideAnyNode) {
+                for (let hw of gameState.hallways) {
+                    if (!hw) continue;
+                    const line = new THREE.Vector3().subVectors(hw.p2, hw.p1);
+                    const len = hw.length;
+                    const dir = line.clone().normalize();
+                    const v = new THREE.Vector3().subVectors(targetPos, hw.p1);
+                    const proj = v.dot(dir);
+
+                    if (proj >= 0 && proj <= len) {
+                        const closestPt = hw.p1.clone().addScaledVector(dir, proj);
+                        const distToAxis = Math.hypot(targetPos.x - closestPt.x, targetPos.z - closestPt.z);
+                        if (distToAxis <= 1.2) {
+                            insideAnyNode = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Clamp back if attempting to step outside
+            if (!insideAnyNode) {
+                const current = gameState.currentInsideTent || gameState.structures[0];
+                if (current) {
+                    const dir = new THREE.Vector3().subVectors(targetPos, new THREE.Vector3(current.x, 1.8, current.z)).normalize();
+                    targetPos.copy(new THREE.Vector3(current.x, 1.8, current.z)).addScaledVector(dir, current.radius - 0.6);
+                }
+            }
+
+            return targetPos;
+        }
+
+        function updateRadiationSystem() {
+            if (gameState.isInsideTent) {
+                gameState.radiation.currentLevel = 0.01;
+                gameState.player.health = Math.min(100, gameState.player.health + 2);
+            } else {
+                if (Math.random() < 0.08 && !gameState.radiation.stormActive) {
+                    gameState.radiation.stormActive = true;
+                    gameState.radiation.stormTimer = 25;
+                    const banner = document.getElementById('rad-alert-banner');
+                    if (banner) banner.classList.remove('hidden');
+                }
+
+                if (gameState.radiation.stormActive) {
+                    gameState.radiation.stormTimer--;
+                    gameState.radiation.currentLevel = 4.85 + Math.random() * 1.5;
+                    gameState.player.health = Math.max(0, gameState.player.health - 4);
+                    playAudio('geiger');
+
+                    const screenOverlay = document.getElementById('screen-overlay');
+                    if (screenOverlay) {
+                        screenOverlay.className = "pointer-events-none fixed inset-0 z-10 transition-all duration-300 rad-warning-active";
+                    }
+
+                    if (gameState.radiation.stormTimer <= 0) {
+                        gameState.radiation.stormActive = false;
+                        const banner = document.getElementById('rad-alert-banner');
+                        if (banner) banner.classList.add('hidden');
+                        if (screenOverlay) screenOverlay.className = "pointer-events-none fixed inset-0 z-10 transition-all duration-300";
+                    }
+                } else {
+                    gameState.radiation.currentLevel = 0.05 + Math.random() * 0.02;
+                }
+            }
+
+            updateRadUI();
+        }
+
+        function updateResourceCycles() {
+            if (!gameState.isInsideTent && gameState.viewMode === 'fps') {
+                gameState.player.oxygen = Math.max(0, gameState.player.oxygen - 1);
+            } else {
+                gameState.player.oxygen = Math.min(100, gameState.player.oxygen + 5);
+            }
+
+            updateUI();
+        }
+
+        function updateUI() {
+            const elAlloys = document.getElementById('res-alloys');
+            const elO2 = document.getElementById('res-o2');
+            const elCargo = document.getElementById('res-cargo');
+
+            if (elAlloys) elAlloys.innerText = gameState.resources.alloys;
+            if (elO2) elO2.innerText = `${Math.round(gameState.player.oxygen)}%`;
+            if (elCargo) elCargo.innerText = gameState.carriedCargo ? `${gameState.carriedCargo.toUpperCase()} KIT` : "EMPTY";
+
+            const envStatus = document.getElementById('environment-status');
+            const envIcon = document.getElementById('environment-icon');
+            if (envStatus && envIcon) {
+                if (gameState.isInsideTent) {
+                    envStatus.innerText = "PRESSURIZED NETWORK (SAFE)";
+                    envStatus.className = "font-orbitron font-bold text-emerald-400";
+                    envIcon.className = "fa-solid fa-shield-halved text-emerald-400";
+                } else {
+                    envStatus.innerText = "UNPRESSURIZED SURFACE";
+                    envStatus.className = "font-orbitron font-bold text-amber-400";
+                    envIcon.className = "fa-solid fa-mask-ventilator text-amber-400";
+                }
+            }
+
+            if (gameState.rover) {
+                const elTrunk = document.getElementById('rover-trunk-status');
+                if (elTrunk) elTrunk.innerText = gameState.rover.trunkCargo ? `${gameState.rover.trunkCargo.toUpperCase()} KIT` : "EMPTY";
+            }
+        }
+
+        function updateRadUI() {
+            const radValEl = document.getElementById('rad-val');
+            const radBarEl = document.getElementById('rad-bar');
+            const radIcon = document.getElementById('rad-icon');
+
+            if (!radValEl || !radBarEl || !radIcon) return;
+
+            const lvl = gameState.radiation.currentLevel;
+            radValEl.innerText = `${lvl.toFixed(2)} mSv/h`;
+
+            if (lvl > 1.0) {
+                radValEl.className = "font-orbitron font-bold text-red-500 animate-pulse";
+                radBarEl.className = "bg-red-600 h-full w-[90%] transition-all duration-300";
+                radIcon.className = "fa-solid fa-radiation text-xl text-red-500 animate-spin";
+            } else {
+                radValEl.className = "font-orbitron font-bold text-emerald-400";
+                radBarEl.className = "bg-emerald-500 h-full w-[10%] transition-all duration-300";
+                radIcon.className = "fa-solid fa-radiation text-xl text-emerald-400 animate-spin-slow";
+            }
+        }
+
+        function showNotification(msg) {
+            const banner = document.getElementById('rad-alert-banner');
+            if (banner && !gameState.radiation.stormActive) {
+                banner.classList.remove('hidden');
+                const h3 = banner.querySelector('h3');
+                const p = banner.querySelector('p');
+                if (h3) h3.innerText = "COLONY SYSTEM LOG";
+                if (p) p.innerText = msg;
+                setTimeout(() => {
+                    if (!gameState.radiation.stormActive) banner.classList.add('hidden');
+                }, 3500);
+            }
+        }
+
+        function toggleViewMode() {
+            if (gameState.viewMode === 'fps') {
+                enterTopDownMode();
+            } else {
+                enterFPSMode();
+            }
+        }
+
+        function enterTopDownMode() {
+            gameState.viewMode = 'topdown';
+            const btnText = document.getElementById('toggle-view-text');
+            const btnIcon = document.getElementById('toggle-view-icon');
+            const crosshair = document.getElementById('crosshair');
+            const selector = document.getElementById('topdown-selector');
+            const modeInd = document.getElementById('hud-mode-indicator');
+
+            if (btnText) btnText.innerText = "SCOUT VIEW (T)";
+            if (btnIcon) btnIcon.className = "fa-solid fa-person-walking text-sm";
+            if (crosshair) crosshair.style.display = 'none';
+            if (selector) selector.classList.remove('hidden');
+            if (modeInd) modeInd.innerText = "TOP-DOWN MODE";
+
+            if (document.pointerLockElement) {
+                document.exitPointerLock();
+            }
+
+            showNotification("Switched to Top-Down Planning Mode. Press T or click button to return to Scout View!");
+        }
+
+        function enterFPSMode() {
+            gameState.viewMode = 'fps';
+            const btnText = document.getElementById('toggle-view-text');
+            const btnIcon = document.getElementById('toggle-view-icon');
+            const crosshair = document.getElementById('crosshair');
+            const modeInd = document.getElementById('hud-mode-indicator');
+
+            if (btnText) btnText.innerText = "TOP-DOWN MAP (T)";
+            if (btnIcon) btnIcon.className = "fa-solid fa-satellite text-sm";
+            if (crosshair) crosshair.style.display = 'block';
+            if (modeInd) modeInd.innerText = "FPS SCOUT MODE";
+
+            if (pointerControls) {
+                const pObj = pointerControls.getObject();
+                pObj.position.copy(gameState.player.position);
+                
+                try {
+                    pointerControls.lock();
+                } catch (err) {
+                    // Ignore pointerlock deferrals
+                }
+            }
+
+            showNotification("Returned to FPS Scout View.");
+        }
+
+        function setupEventListeners() {
+            window.addEventListener('resize', onWindowResize);
+
+            const btnBegin = document.getElementById('btn-begin-mission');
+            if (btnBegin) {
+                btnBegin.addEventListener('click', () => {
+                    const introModal = document.getElementById('intro-modal');
+                    if (introModal) introModal.classList.add('hidden');
+                    try {
+                        pointerControls.lock();
+                    } catch(e) {}
+                });
+            }
+
+            const btnToggleView = document.getElementById('btn-toggle-view');
+            if (btnToggleView) btnToggleView.addEventListener('click', toggleViewMode);
+
+            const btnUnstuck = document.getElementById('btn-unstuck');
+            if (btnUnstuck) {
+                btnUnstuck.addEventListener('click', () => {
+                    if (document.pointerLockElement) {
+                        document.exitPointerLock();
+                    }
+                    enterFPSMode();
+                });
+            }
+
+            const btnToggleBuild = document.getElementById('btn-toggle-build');
+            if (btnToggleBuild) {
+                btnToggleBuild.addEventListener('click', () => {
+                    if (gameState.stage !== 'colony_expansion') {
+                        gameState.buildModeActive = !gameState.buildModeActive;
+                        if (!gameState.buildModeActive) {
+                            if (placementPreviewMesh) placementPreviewMesh.visible = false;
+                            if (placementRingMesh) placementRingMesh.visible = false;
+                        }
+                    }
+                });
+            }
+
+            document.querySelectorAll('.order-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.order-btn').forEach(b => b.classList.remove('border-orange-500', 'bg-orange-950/60'));
+                    const target = e.currentTarget;
+                    target.classList.add('border-orange-500', 'bg-orange-950/60');
+                    gameState.designatedBlueprintType = target.getAttribute('data-type');
+                });
+            });
+
+            // FIXED EVENT LISTENER: Prevent double firing or undefined target clicks
+            window.addEventListener('pointerdown', (e) => {
+                // Ignore clicks on UI elements
+                if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.closest('#ui-layer')) return;
+
+                if (gameState.viewMode === 'topdown') {
+                    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                    raycaster.setFromCamera(mouse, camera);
+                    const intersects = raycaster.intersectObject(terrainMesh);
+
+                    if (intersects.length > 0) {
+                        const pt = intersects[0].point;
+                        const snapX = Math.round(pt.x / 4) * 4;
+                        const snapZ = Math.round(pt.z / 4) * 4;
+                        designateBlueprint(gameState.designatedBlueprintType, snapX, snapZ);
+                    }
+                } else if (gameState.buildModeActive && placementPreviewMesh && placementPreviewMesh.visible && gameState.viewMode === 'fps') {
+                    // Lock check to prevent stray clicks from throwing uncaught errors
+                    const targetType = (gameState.stage === 'safety_tent') ? 'shelter' : 'dropzone';
+                    placeInitialFPSStructure(targetType, placementPreviewMesh.position.x, placementPreviewMesh.position.z);
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (gameState.buildModeActive && gameState.viewMode === 'fps' && camera && terrainMesh) {
+                    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                    const intersects = raycaster.intersectObject(terrainMesh);
+
+                    if (intersects.length > 0) {
+                        const pt = intersects[0].point;
+                        const snapX = Math.round(pt.x / 4) * 4;
+                        const snapZ = Math.round(pt.z / 4) * 4;
+                        if (placementPreviewMesh) {
+                            placementPreviewMesh.position.set(snapX, 0.1, snapZ);
+                            placementPreviewMesh.visible = true;
+                        }
+
+                        // Visual Distance Ring Feedback
+                        if (gameState.structures && gameState.structures.length > 0) {
+                            const lastStruct = gameState.structures[gameState.structures.length - 1];
+                            if (lastStruct && placementRingMesh) {
+                                placementRingMesh.position.set(lastStruct.x, 0.2, lastStruct.z);
+                                placementRingMesh.visible = true;
+
+                                const check = validatePlacementDistance(snapX, snapZ);
+                                if (placementPreviewMesh && placementPreviewMesh.material) {
+                                    placementPreviewMesh.material.color.setHex(check.valid ? 0x00ffaa : 0xff2222);
+                                }
+                            }
+                        }
+                    } else {
+                        if (placementPreviewMesh) placementPreviewMesh.visible = false;
+                        if (placementRingMesh) placementRingMesh.visible = false;
+                    }
+                }
+            });
+
+            const onKeyDown = (e) => {
+                switch (e.code) {
+                    case 'KeyW': keys.w = true; break;
+                    case 'KeyA': keys.a = true; break;
+                    case 'KeyS': keys.s = true; break;
+                    case 'KeyD': keys.d = true; break;
+                    case 'KeyT':
+                        toggleViewMode();
+                        break;
+                    case 'KeyB':
+                        if (gameState.stage !== 'colony_expansion') {
+                            gameState.buildModeActive = !gameState.buildModeActive;
+                            if (!gameState.buildModeActive) {
+                                if (placementPreviewMesh) placementPreviewMesh.visible = false;
+                                if (placementRingMesh) placementRingMesh.visible = false;
+                            }
+                        }
+                        break;
+                    case 'KeyE':
+                        handleFPSInteractions();
+                        break;
+                    case 'KeyF':
+                        handleRoverLogistics();
+                        break;
+                    case 'KeyU':
+                    case 'Escape':
+                        if (document.pointerLockElement) {
+                            document.exitPointerLock();
+                        }
+                        enterFPSMode();
+                        break;
+                }
+            };
+
+            const onKeyUp = (e) => {
+                switch (e.code) {
+                    case 'KeyW': keys.w = false; break;
+                    case 'KeyA': keys.a = false; break;
+                    case 'KeyS': keys.s = false; break;
+                    case 'KeyD': keys.d = false; break;
+                }
+            };
+
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('keyup', onKeyUp);
+        }
+
+        function handleFPSInteractions() {
+            if (!pointerControls) return;
+            const pPos = pointerControls.getObject().position;
+
+            // 1. Pickup Crates (Only outside on surface)
+            if (!gameState.isInsideTent && !gameState.carriedCargo) {
+                for (let i = gameState.supplyCrates.length - 1; i >= 0; i--) {
+                    const crate = gameState.supplyCrates[i];
+                    if (crate && crate.mesh && pPos.distanceTo(crate.mesh.position) < 3.5) {
+                        gameState.carriedCargo = crate.type;
+                        if (handCargoMesh) handCargoMesh.visible = true;
+                        scene.remove(crate.mesh);
+                        gameState.supplyCrates.splice(i, 1);
+                        playAudio('pickup');
+                        updateUI();
+                        const sName = structureDetails[crate.type] ? structureDetails[crate.type].name : 'Supply';
+                        showNotification(`Picked up ${sName} Kit! Deliver to Blueprint site.`);
+                        return;
+                    }
+                }
+            }
+
+            // 2. Deliver Kit to Blueprint
+            if (!gameState.isInsideTent && gameState.carriedCargo) {
+                for (let bp of gameState.blueprints) {
+                    if (!bp) continue;
+                    const bpPos = new THREE.Vector3(bp.x, 0, bp.z);
+                    if (pPos.distanceTo(bpPos) < 4.5) {
+                        if (bp.type === gameState.carriedCargo) {
+                            assembleStructureFromBlueprint(bp);
+                            return;
+                        } else {
+                            const reqName = structureDetails[bp.type] ? structureDetails[bp.type].name : 'matching';
+                            showNotification(`Mismatched Kit! Site requires ${reqName} Kit.`);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // 3. Airlocks & Consoles
+            for (let s of gameState.structures) {
+                if (!s || s.type === 'dropzone') continue;
+
+                const consolePos = new THREE.Vector3(s.x, 0, s.z - 1.2);
+                if (pPos.distanceTo(consolePos) < 3.5) {
+                    enterTopDownMode();
+                    return;
+                }
+
+                const airlockPos = new THREE.Vector3(s.x, 0, s.z + 3.8);
+                if (pPos.distanceTo(airlockPos) < 4.0) {
+                    cycleAirlock(s);
+                    return;
+                }
+            }
+        }
+
+        function handleRoverLogistics() {
+            if (!gameState.rover || gameState.isInsideTent || !pointerControls) return;
+
+            const pPos = pointerControls.getObject().position;
+            const rPos = gameState.rover.mesh ? gameState.rover.mesh.position : gameState.rover.position;
+
+            if (pPos.distanceTo(rPos) < 4.5) {
+                if (!gameState.isPilotingRover) {
+                    if (gameState.carriedCargo && !gameState.rover.trunkCargo) {
+                        gameState.rover.trunkCargo = gameState.carriedCargo;
+                        gameState.carriedCargo = null;
+                        if (handCargoMesh) handCargoMesh.visible = false;
+                        playAudio('pickup');
+                        updateUI();
+                        showNotification("Stored Supply Kit into Rover Trunk!");
+                        return;
+                    } else if (!gameState.carriedCargo && gameState.rover.trunkCargo) {
+                        gameState.carriedCargo = gameState.rover.trunkCargo;
+                        gameState.rover.trunkCargo = null;
+                        if (handCargoMesh) handCargoMesh.visible = true;
+                        playAudio('pickup');
+                        updateUI();
+                        showNotification("Unloaded Supply Kit from Rover Trunk!");
+                        return;
+                    }
+
+                    gameState.isPilotingRover = true;
+                    const vehHud = document.getElementById('vehicle-hud');
+                    if (vehHud) vehHud.classList.remove('hidden');
+                    showNotification("Boarded Mars Rover!");
+                } else {
+                    gameState.isPilotingRover = false;
+                    const vehHud = document.getElementById('vehicle-hud');
+                    if (vehHud) vehHud.classList.add('hidden');
+                    pPos.set(rPos.x + 2.5, 1.8, rPos.z);
+                    showNotification("Exited Mars Rover.");
+                }
+            }
+        }
+
+        function onWindowResize() {
+            if (!camera || !renderer) return;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- GAME LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // 1. Cargo Drone Logic
+            if (gameState.drone) {
+                const d = gameState.drone;
+                if (d.stage === 'descending') {
+                    d.mesh.position.y -= delta * 14;
+                    if (d.mesh.position.y <= d.targetPos.y + 1.2) {
+                        d.mesh.position.y = d.targetPos.y + 1.2;
+                        d.stage = 'unloading';
+                        d.timer = time;
+
+                        spawnSupplyCrate(d.type, d.targetPos.clone().add(new THREE.Vector3((Math.random()-0.5)*2, 0, (Math.random()-0.5)*2)));
+                        const sName = structureDetails[d.type] ? structureDetails[d.type].name : 'Supply';
+                        showNotification(`Cargo Drone delivered ${sName} Kit to Drop Zone!`);
+                    }
+                } else if (d.stage === 'unloading') {
+                    if (time - d.timer > 2.0) {
+                        d.stage = 'departing';
+                    }
+                } else if (d.stage === 'departing') {
+                    d.mesh.position.y += delta * 20;
+                    d.mesh.position.z -= delta * 15;
+                    if (d.mesh.position.y > 100) {
+                        scene.remove(d.mesh);
+                        gameState.drone = null;
+                    }
+                }
+            }
+
+            // 2. Movement & Pressurized Collision Logic
+            if (pointerControls) {
+                const pObj = pointerControls.getObject();
+
+                if (gameState.isPilotingRover && gameState.rover) {
+                    const r = gameState.rover;
+                    if (keys.w) r.speed = Math.min(18.0, r.speed + delta * 20);
+                    else if (keys.s) r.speed = Math.max(-8.0, r.speed - delta * 15);
+                    else r.speed *= 0.95;
+
+                    if (keys.a) r.rotationY += delta * 2.0;
+                    if (keys.d) r.rotationY -= delta * 2.0;
+
+                    if (r.mesh) {
+                        r.mesh.rotation.y = r.rotationY;
+                        r.mesh.translateZ(r.speed * delta);
+                        pObj.position.copy(r.mesh.position).add(new THREE.Vector3(0, 1.8, 0));
+                    }
+                    if (Math.abs(r.speed) > 0.5) playAudio('engine');
+
+                    gameState.player.position.copy(pObj.position);
+                } else if (gameState.viewMode === 'fps') {
+                    const moveVec = new THREE.Vector3();
+                    if (keys.w) moveVec.z -= 1;
+                    if (keys.s) moveVec.z += 1;
+                    if (keys.a) moveVec.x -= 1;
+                    if (keys.d) moveVec.x += 1;
+
+                    moveVec.normalize();
+                    moveVec.applyQuaternion(pObj.quaternion);
+                    moveVec.y = 0;
+
+                    const nextPos = pObj.position.clone().addScaledVector(moveVec, gameState.player.speed * delta);
+
+                    // Enforce Pressurized Interior Boundaries
+                    if (gameState.isInsideTent) {
+                        enforceIndoorBoundaryCollision(nextPos);
+                    }
+
+                    pObj.position.copy(nextPos);
+                    pObj.position.y = 1.8;
+                    gameState.player.position.copy(pObj.position);
+
+                    // Tooltip Prompts
+                    const promptUI = document.getElementById('interaction-prompt');
+                    const mainTxt = document.getElementById('prompt-main-text');
+                    const subTxt = document.getElementById('prompt-sub-text');
+                    let promptFound = false;
+
+                    if (!gameState.isInsideTent && mainTxt && subTxt && promptUI) {
+                        for (let bp of gameState.blueprints) {
+                            if (bp && pObj.position.distanceTo(new THREE.Vector3(bp.x, 0, bp.z)) < 4.5) {
+                                const sName = structureDetails[bp.type] ? structureDetails[bp.type].name.toUpperCase() : 'STRUCTURE';
+                                mainTxt.innerText = `ASSEMBLE ${sName}`;
+                                subTxt.innerText = gameState.carriedCargo === bp.type ? "PRESS E TO DELIVER KIT & BUILD" : `REQUIRES ${sName} KIT`;
+                                promptUI.classList.remove('hidden');
+                                promptFound = true;
+                                break;
+                            }
+                        }
+
+                        if (!promptFound) {
+                            for (let crate of gameState.supplyCrates) {
+                                if (crate && crate.mesh && pObj.position.distanceTo(crate.mesh.position) < 3.5) {
+                                    const sName = structureDetails[crate.type] ? structureDetails[crate.type].name.toUpperCase() : 'SUPPLY';
+                                    mainTxt.innerText = "PICK UP SUPPLY KIT";
+                                    subTxt.innerText = `PRESS E TO PICK UP ${sName} KIT`;
+                                    promptUI.classList.remove('hidden');
+                                    promptFound = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!promptFound && mainTxt && subTxt && promptUI) {
+                        for (let s of gameState.structures) {
+                            if (!s || s.type === 'dropzone') continue;
+
+                            const consolePos = new THREE.Vector3(s.x, 0, s.z - 1.2);
+                            if (pObj.position.distanceTo(consolePos) < 3.5) {
+                                mainTxt.innerText = "COMMAND TERMINAL";
+                                subTxt.innerText = "PRESS E TO OPEN TOP-DOWN STRATEGIC MAP";
+                                promptUI.classList.remove('hidden');
+                                promptFound = true;
+                                break;
+                            }
+
+                            const airlockPos = new THREE.Vector3(s.x, 0, s.z + 3.8);
+                            if (pObj.position.distanceTo(airlockPos) < 4.0) {
+                                mainTxt.innerText = "CYCLE AIRLOCK DOOR";
+                                subTxt.innerText = gameState.isInsideTent ? "EXIT TO MARS SURFACE" : "ENTER SAFE HABITAT";
+                                promptUI.classList.remove('hidden');
+                                promptFound = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!promptFound && promptUI) promptUI.classList.add('hidden');
+
+                } else if (gameState.viewMode === 'topdown' && camera) {
+                    orbitSpherical.theta += delta * 0.08;
+                    camera.position.setFromSpherical(orbitSpherical).add(orbitTarget);
+                    camera.lookAt(orbitTarget);
+                }
+            }
+
+            // 3. Animations & Console Pulse
+            gameState.blueprints.forEach(bp => {
+                if (bp && bp.mesh) {
+                    const ring = bp.mesh.getObjectByName("beacon_ring");
+                    if (ring) {
+                        ring.rotation.z += delta * 2;
+                        ring.position.y = 5.0 + Math.sin(time * 3) * 0.4;
+                    }
+                }
+            });
+
+            gameState.supplyCrates.forEach(c => {
+                if (c && c.mesh) {
+                    const ring = c.mesh.getObjectByName("crate_ring");
+                    if (ring) ring.rotation.z += delta * 2;
+                }
+            });
+
+            gameState.structures.forEach(s => {
+                if (!s || !s.mesh) return;
+                if (s.type === 'dronehub') {
+                    const dish = s.mesh.getObjectByName("radar_dish");
+                    if (dish) dish.rotation.y += delta * 2;
+                }
+
+                const consoleGroup = s.mesh.getObjectByName("command_console");
+                if (consoleGroup) {
+                    const screen = consoleGroup.getObjectByName("console_screen");
+                    const halo = consoleGroup.getObjectByName("console_halo");
+                    if (screen && screen.material) {
+                        screen.material.color.setHSL((time * 0.5) % 1, 0.9, 0.5);
+                    }
+                    if (halo && halo.material) {
+                        halo.material.opacity = 0.4 + Math.sin(time * 6) * 0.3;
+                        halo.scale.setScalar(1.0 + Math.sin(time * 4) * 0.15);
+                    }
+                }
+            });
+
+            if (dustStormParticles) {
+                dustStormParticles.rotation.y += delta * 0.015;
+            }
+
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
